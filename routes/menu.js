@@ -76,4 +76,32 @@ router.post("/", verifyJWT, verifyVendor, async (req, res) => {
   }
 })
 
+// ========================================================
+// GET /api/menu/my-items — Get all items for logged-in vendor
+// ========================================================
+router.get("/my-items", verifyJWT, verifyVendor, async (req, res) => {
+  try {
+    const db = getDB()
+    const vendorEmail = req.user.email
+
+    // Fetch all items created by this vendor, sorted newest first
+    const items = await db
+      .collection("menuItems")
+      .find({ vendorEmail })
+      .sort({ createdAt: -1 })
+      .toArray()
+
+    return res.json({
+      success: true,
+      count: items.length,
+      items,
+    })
+  } catch (error) {
+    console.error("Error fetching vendor menu items:", error)
+    return res.status(500).json({
+      message: "Server error while fetching menu items.",
+    })
+  }
+})
+
 export default router
