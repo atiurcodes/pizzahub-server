@@ -9,6 +9,7 @@ import {
   verifyCustomer,
   verifyVendor,
 } from "./middleware/verifyRole.js"
+import menuRoutes from "./routes/menu.js"
 
 const app = express()
 const port = process.env.PORT || 5000
@@ -48,7 +49,10 @@ app.get("/api/customer/check", verifyJWT, verifyCustomer, (req, res) => {
   res.json({ message: "Welcome Customer", user: req.user })
 })
 
-// 5. Connect MongoDB & Start Server
+// 5. Business Routes
+app.use("/api/menu", menuRoutes)
+
+// 6. Connect MongoDB & Start Server
 connectDB()
   .then(() => {
     app.listen(port, () => {
