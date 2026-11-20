@@ -157,4 +157,36 @@ router.patch("/menu-items/:id/status", async (req, res) => {
   }
 })
 
+// ========================================================
+// 3. DELETE /api/admin/menu-items/:id — Delete any inappropriate item
+// ========================================================
+router.delete("/menu-items/:id", async (req, res) => {
+  try {
+    const { id } = req.params
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid menu item ID." })
+    }
+
+    const db = getDB()
+    const result = await db
+      .collection("menuItems")
+      .deleteOne({ _id: new ObjectId(id) })
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ message: "Menu item not found." })
+    }
+
+    return res.json({
+      success: true,
+      message: "Menu item deleted successfully by admin.",
+    })
+  } catch (error) {
+    console.error("Error deleting menu item:", error)
+    return res.status(500).json({
+      message: "Server error while deleting menu item.",
+    })
+  }
+})
+
 export default router
