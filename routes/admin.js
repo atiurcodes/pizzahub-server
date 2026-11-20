@@ -220,4 +220,62 @@ router.get("/users", async (req, res) => {
   }
 })
 
+// ========================================================
+// 5. PATCH /api/admin/users/:id/block — Toggle user block status
+// ========================================================
+router.patch("/users/:id/block", async (req, res) => {
+  try {
+    const { id } = req.params
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid user ID." })
+    }
+
+    const db = getDB()
+    const userCollection =
+      (await db.listCollections({ name: "user" }).hasNext())
+        ? db.collection("user")
+        : db.collection("users")
+
+    // 1. Find user
+    const targetUser = await userCollection.findOne({ _id: new ObjectId(id) })
+    if (!targetUser) {
+      return res.status(404).json({ message: "User not found." })
+    }
+
+    // 2. Prevent admin self-blocking
+    if (targetUser.email === req.user.email) {
+      return res.status(400).json({
+        message: "You cannot block your own admin account.",
+      })
+    }
+
+    // 3. Toggle blocked status
+    const newBlockedStatus = !targetUser.isBlocked
+
+    await userCollection.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          isBlocked: newBlockedStatus,
+          updatedAt: new Date(),
+        },
+      }
+    )
+
+    return res.json({
+      success: true,
+      message: newBlockedStatus
+        ? `User ${targetUser.email} has been blocked.`
+        : `User ${targetUser.email} has been unblocked.`,
+      isBlocked: newBlockedStatus,
+    })
+  } catch (error) {
+    console.error("Error toggling user block status:", error)
+    return res.status(500).json({
+      message: "Server error while updating user block status.",
+    })
+  }
+})
+
 export default router
