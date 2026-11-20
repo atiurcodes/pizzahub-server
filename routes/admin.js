@@ -190,10 +190,11 @@ router.delete("/menu-items/:id", async (req, res) => {
 })
 
 // ========================================================
-// 4. GET /api/admin/users — Fetch all users
+// 4. GET /api/admin/users — Fetch users with role & search query
 // ========================================================
 router.get("/users", async (req, res) => {
   try {
+    const { role, search } = req.query
     const db = getDB()
 
     const userCollection =
@@ -201,9 +202,25 @@ router.get("/users", async (req, res) => {
         ? db.collection("user")
         : db.collection("users")
 
-    // Fetch all users sorted by newest first
+    // Dynamic MongoDB filter
+    const filter = {}
+
+    // 1. Role filter (e.g. "customer", "vendor", "admin")
+    if (role && role !== "all") {
+      filter.role = role
+    }
+
+    // 2. Search filter (matches name OR email case-insensitively)
+    if (search && search.trim()) {
+      filter.$or = [
+        { name: { $regex: search.trim(), $options: "i" } },
+        { email: { $regex: search.trim(), $options: "i" } },
+      ]
+    }
+
+    // Fetch matching users sorted by newest first
     const users = await userCollection
-      .find({})
+      .find(filter)
       .sort({ createdAt: -1 })
       .toArray()
 
