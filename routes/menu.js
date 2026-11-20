@@ -197,4 +197,47 @@ router.patch("/:id", verifyJWT, verifyVendor, async (req, res) => {
   }
 })
 
+// ========================================================
+// DELETE /api/menu/:id — Delete a menu item (Vendor only, owner check)
+// ========================================================
+router.delete("/:id", verifyJWT, verifyVendor, async (req, res) => {
+  try {
+    const { id } = req.params
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid item ID format." })
+    }
+
+    const db = getDB()
+    const menuCollection = db.collection("menuItems")
+
+    // 1. Find existing item to verify ownership
+    const existingItem = await menuCollection.findOne({ _id: new ObjectId(id) })
+
+    if (!existingItem) {
+      return res.status(404).json({ message: "Menu item not found." })
+    }
+
+    // 2. Strict Security: A vendor can ONLY delete their own items
+    if (existingItem.vendorEmail !== req.user.email) {
+      return res.status(403).json({
+        message: "Forbidden: You do not have permission to delete this item.",
+      })
+    }
+
+    // 3. Delete from MongoDB
+    await menuCollection.deleteOne({ _id: new ObjectId(id) })
+
+    return res.json({
+      success: true,
+      message: "Menu item deleted successfully.",
+    })
+  } catch (error) {
+    console.error("Error deleting menu item:", error)
+    return res.status(500).json({
+      message: "Server error while deleting menu item.",
+    })
+  }
+})
+
 export default router
