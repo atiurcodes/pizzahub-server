@@ -9,6 +9,7 @@ import {
   verifyCustomer,
   verifyVendor,
 } from "./middleware/verifyRole.js"
+import customerRoutes from "./routes/customer.js"
 import menuRoutes from "./routes/menu.js"
 import adminRoutes from "./routes/admin.js"
 
@@ -51,6 +52,7 @@ app.get("/api/customer/check", verifyJWT, verifyCustomer, (req, res) => {
 })
 
 // 5. Business Routes
+app.use("/api/customer", customerRoutes)
 app.use("/api/menu", menuRoutes)
 app.use("/api/admin", adminRoutes)
 

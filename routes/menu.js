@@ -106,6 +106,33 @@ router.get("/my-items", verifyJWT, verifyVendor, async (req, res) => {
 })
 
 // ========================================================
+// GET /api/menu — Public Browse Menu (Approved items only)
+// ========================================================
+router.get("/", async (req, res) => {
+  try {
+    const db = getDB()
+
+    // Fetch strictly approved items, sorted newest first
+    const items = await db
+      .collection("menuItems")
+      .find({ status: "approved" })
+      .sort({ createdAt: -1 })
+      .toArray()
+
+    return res.json({
+      success: true,
+      count: items.length,
+      items,
+    })
+  } catch (error) {
+    console.error("Error fetching public menu items:", error)
+    return res.status(500).json({
+      message: "Server error while fetching menu.",
+    })
+  }
+})
+
+// ========================================================
 // GET /api/menu/:id — Get a single menu item by ID
 // ========================================================
 router.get("/:id", async (req, res) => {
