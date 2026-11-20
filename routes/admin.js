@@ -11,7 +11,64 @@ const router = express.Router()
 router.use(verifyJWT, verifyAdmin)
 
 // ========================================================
-// 1. GET /api/admin/menu-items — Fetch all menu items for admin review
+// 1. GET /api/admin/stats — Fetch real-time overview counts
+// ========================================================
+router.get("/stats", async (req, res) => {
+  try {
+    const db = getDB()
+
+    // 1. User collection (Better Auth uses "user" or "users")
+    const userCollection =
+      (await db.listCollections({ name: "user" }).hasNext())
+        ? db.collection("user")
+        : db.collection("users")
+
+    const totalUsers = await userCollection.countDocuments()
+    const totalVendors = await userCollection.countDocuments({ role: "vendor" })
+    const totalCustomers = await userCollection.countDocuments({
+      role: "customer",
+    })
+
+    // 2. Menu Items collection
+    const menuCollection = db.collection("menuItems")
+    const totalMenuItems = await menuCollection.countDocuments()
+    const pendingMenuItems = await menuCollection.countDocuments({
+      status: "pending",
+    })
+    const approvedMenuItems = await menuCollection.countDocuments({
+      status: "approved",
+    })
+
+    // 3. Transactions collection
+    let totalTransactions = 0
+    try {
+      totalTransactions = await db.collection("transactions").countDocuments()
+    } catch {
+      totalTransactions = 0
+    }
+
+    return res.json({
+      success: true,
+      stats: {
+        totalUsers,
+        totalVendors,
+        totalCustomers,
+        totalMenuItems,
+        pendingMenuItems,
+        approvedMenuItems,
+        totalTransactions,
+      },
+    })
+  } catch (error) {
+    console.error("Error fetching admin stats:", error)
+    return res.status(500).json({
+      message: "Server error while fetching stats.",
+    })
+  }
+})
+
+// ========================================================
+// 2. GET /api/admin/menu-items — Fetch all menu items for admin review
 // ========================================================
 router.get("/menu-items", async (req, res) => {
   try {
