@@ -44,6 +44,60 @@ router.get("/menu-items", async (req, res) => {
   }
 })
 
+// ========================================================
+// 2. PATCH /api/admin/menu-items/:id/status — Approve or reject an item
+// ========================================================
+router.patch("/menu-items/:id/status", async (req, res) => {
+  try {
+    const { id } = req.params
+    const { status } = req.body
 
+    // 1. Validate ID format
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid menu item ID." })
+    }
+
+    // 2. Validate status input
+    const allowedStatuses = ["approved", "rejected", "pending", "inactive"]
+    if (!status || !allowedStatuses.includes(status)) {
+      return res.status(400).json({
+        message:
+          "Status must be either 'approved', 'rejected', 'pending', or 'inactive'.",
+      })
+    }
+
+    const db = getDB()
+    const menuCollection = db.collection("menuItems")
+
+    // 3. Check if the item exists
+    const existingItem = await menuCollection.findOne({ _id: new ObjectId(id) })
+    if (!existingItem) {
+      return res.status(404).json({ message: "Menu item not found." })
+    }
+
+    // 4. Update status in MongoDB
+    await menuCollection.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          status,
+          reviewedAt: new Date(),
+          reviewedBy: req.user.email,
+        },
+      }
+    )
+
+    return res.json({
+      success: true,
+      message: `Menu item has been marked as ${status}.`,
+      status,
+    })
+  } catch (error) {
+    console.error("Error updating menu item status:", error)
+    return res.status(500).json({
+      message: "Server error while updating menu item status.",
+    })
+  }
+})
 
 export default router
