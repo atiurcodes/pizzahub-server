@@ -189,4 +189,35 @@ router.delete("/menu-items/:id", async (req, res) => {
   }
 })
 
+// ========================================================
+// 4. GET /api/admin/users — Fetch all users
+// ========================================================
+router.get("/users", async (req, res) => {
+  try {
+    const db = getDB()
+
+    const userCollection =
+      (await db.listCollections({ name: "user" }).hasNext())
+        ? db.collection("user")
+        : db.collection("users")
+
+    // Fetch all users sorted by newest first
+    const users = await userCollection
+      .find({})
+      .sort({ createdAt: -1 })
+      .toArray()
+
+    return res.json({
+      success: true,
+      count: users.length,
+      users,
+    })
+  } catch (error) {
+    console.error("Error fetching admin users:", error)
+    return res.status(500).json({
+      message: "Server error while fetching users.",
+    })
+  }
+})
+
 export default router
