@@ -1,4 +1,5 @@
 import express from "express"
+import { ObjectId } from "mongodb"
 
 import { getDB } from "../config/db.js"
 import { verifyJWT } from "../middleware/verifyJWT.js"
@@ -100,6 +101,98 @@ router.get("/my-items", verifyJWT, verifyVendor, async (req, res) => {
     console.error("Error fetching vendor menu items:", error)
     return res.status(500).json({
       message: "Server error while fetching menu items.",
+    })
+  }
+})
+
+// ========================================================
+// GET /api/menu/:id — Get a single menu item by ID
+// ========================================================
+router.get("/:id", async (req, res) => {
+  try {
+    const { id } = req.params
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid item ID format." })
+    }
+
+    const db = getDB()
+    const item = await db
+      .collection("menuItems")
+      .findOne({ _id: new ObjectId(id) })
+
+    if (!item) {
+      return res.status(404).json({ message: "Menu item not found." })
+    }
+
+    return res.json({ success: true, item })
+  } catch (error) {
+    console.error("Error fetching menu item:", error)
+    return res.status(500).json({
+      message: "Server error while fetching menu item.",
+    })
+  }
+})
+
+// ========================================================
+// PATCH /api/menu/:id — Update a menu item (Vendor only, owner check)
+// ========================================================
+router.patch("/:id", verifyJWT, verifyVendor, async (req, res) => {
+  try {
+    const { id } = req.params
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid item ID format." })
+    }
+
+    const db = getDB()
+    const menuCollection = db.collection("menuItems")
+
+    // 1. Find existing item to verify ownership
+    const existingItem = await menuCollection.findOne({ _id: new ObjectId(id) })
+
+    if (!existingItem) {
+      return res.status(404).json({ message: "Menu item not found." })
+    }
+
+    // 2. Strict Security: A vendor can ONLY edit their own items
+    if (existingItem.vendorEmail !== req.user.email) {
+      return res.status(403).json({
+        message: "Forbidden: You do not have permission to edit this item.",
+      })
+    }
+
+    // 3. Extract updated fields
+    const { itemName, category, price, location, description, images } = req.body
+
+    const updateDoc = {
+      updatedAt: new Date(),
+      status: "pending", // Re-submit for review upon edit
+    }
+
+    if (itemName) updateDoc.itemName = itemName.trim()
+    if (category) updateDoc.category = category.trim()
+    if (price !== undefined) updateDoc.price = Number(price)
+    if (location) updateDoc.location = location.trim()
+    if (description) updateDoc.description = description.trim()
+    if (images && Array.isArray(images) && images.length > 0) {
+      updateDoc.images = images
+    }
+
+    // 4. Update in MongoDB
+    await menuCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updateDoc }
+    )
+
+    return res.json({
+      success: true,
+      message: "Menu item updated successfully! Pending admin re-review.",
+    })
+  } catch (error) {
+    console.error("Error updating menu item:", error)
+    return res.status(500).json({
+      message: "Server error while updating menu item.",
     })
   }
 })
