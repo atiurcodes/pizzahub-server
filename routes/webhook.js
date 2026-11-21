@@ -1,5 +1,8 @@
 import express from "express"
+import { ObjectId } from "mongodb"
 import Stripe from "stripe"
+
+import { getDB } from "../config/db.js"
 
 const router = express.Router()
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
@@ -42,21 +45,91 @@ router.post(
       case "checkout.session.completed": {
         const session = event.data.object
 
-        const customerEmail =
-          session.customer_details?.email || session.customer_email || "N/A"
+        // Extract vendor info from metadata or session customer details
+        const vendorEmail =
+          session.metadata?.vendorEmail ||
+          session.customer_details?.email ||
+          session.customer_email
+        const vendorId = session.metadata?.vendorId
         const amountPaid = session.amount_total
           ? session.amount_total / 100
-          : 0
+          : 19.99
         const currency = session.currency?.toUpperCase() || "USD"
 
-        console.log("✅ Payment Succeeded!")
-        console.log(`👤 Customer Email: ${customerEmail}`)
+        console.log("✅ Checkout Session Succeeded!")
+        console.log(`👤 Vendor Email: ${vendorEmail}`)
         console.log(`💵 Amount Paid: $${amountPaid} ${currency}`)
         console.log(`🆔 Stripe Session ID: ${session.id}`)
         console.log(`📦 Payment Status: ${session.payment_status}`)
-        console.log(`========================================\n`)
 
-        // Next Step: We will update MongoDB users and transactions here.
+        if (!vendorEmail) {
+          console.error("❌ No vendor email found in session. Cannot update database.")
+          break
+        }
+
+        try {
+          const db = getDB()
+
+          // 2.1 Find user collection (Better Auth uses "user" or "users")
+          const hasUserCol = await db.listCollections({ name: "user" }).hasNext()
+          const userCollection = hasUserCol
+            ? db.collection("user")
+            : db.collection("users")
+
+          // 2.2 Upgrade vendor to "premium"
+          const query =
+            vendorId && ObjectId.isValid(vendorId)
+              ? { $or: [{ _id: new ObjectId(vendorId) }, { email: vendorEmail }] }
+              : { email: vendorEmail }
+
+          const updateResult = await userCollection.updateOne(query, {
+            $set: {
+              subscriptionPlan: "premium",
+              updatedAt: new Date(),
+            },
+          })
+
+          if (updateResult.matchedCount > 0) {
+            console.log(
+              `🎉 SUCCESS: Vendor [${vendorEmail}] has been upgraded to PREMIUM in MongoDB!`
+            )
+          } else {
+            console.warn(
+              `⚠️ Vendor with email [${vendorEmail}] was not found in users collection.`
+            )
+          }
+
+          // 2.3 Record payment into "transactions" collection (Idempotent: avoid duplicate inserts)
+          const transactionCollection = db.collection("transactions")
+          const existingTx = await transactionCollection.findOne({
+            stripeSessionId: session.id,
+          })
+
+          if (!existingTx) {
+            const newTransaction = {
+              vendorEmail,
+              vendorId: vendorId || null,
+              plan: "premium",
+              amount: amountPaid,
+              currency,
+              stripeSessionId: session.id,
+              stripePaymentIntentId: session.payment_intent || null,
+              status: "paid",
+              createdAt: new Date(),
+            }
+
+            await transactionCollection.insertOne(newTransaction)
+            console.log(`📝 Transaction record created for session [${session.id}].`)
+          } else {
+            console.log(
+              `ℹ️ Transaction [${session.id}] was already recorded previously.`
+            )
+          }
+        } catch (dbError) {
+          console.error("❌ Database update error in webhook:", dbError)
+        }
+
+        console.log(`========================================\n`)
         break
       }
 
