@@ -132,6 +132,47 @@ router.get(["/my-menu-count", "/menu-count"], verifyJWT, verifyVendor, async (re
 })
 
 // ========================================================
+// GET /api/menu/subscription-status — Live check if vendor is Free or Premium
+// ========================================================
+router.get("/subscription-status", verifyJWT, verifyVendor, async (req, res) => {
+  try {
+    const db = getDB()
+    const vendorEmail = req.user.email
+
+    // 1. Get real-time user record from MongoDB (always fresh)
+    const hasUserCol = await db.listCollections({ name: "user" }).hasNext()
+    const userCollection = hasUserCol ? db.collection("user") : db.collection("users")
+    const user = await userCollection.findOne({ email: vendorEmail })
+
+    const subscriptionPlan = user?.subscriptionPlan === "premium" ? "premium" : "free"
+    const isPremium = subscriptionPlan === "premium"
+
+    // 2. Count active non-rejected menu items for this vendor
+    const activeItemCount = await db.collection("menuItems").countDocuments({
+      vendorEmail,
+      status: { $ne: "rejected" },
+    })
+
+    // 3. Premium vendors have unlimited items; Free vendors have max 3 items
+    const canAddMore = isPremium || activeItemCount < 3
+
+    return res.json({
+      success: true,
+      subscriptionPlan,
+      isPremium,
+      activeItemCount,
+      maxAllowed: isPremium ? "unlimited" : 3,
+      canAddMore,
+    })
+  } catch (error) {
+    console.error("Error checking vendor subscription status:", error)
+    return res.status(500).json({
+      message: "Server error while checking subscription status.",
+    })
+  }
+})
+
+// ========================================================
 // GET /api/menu — Public Browse Menu (Approved items only)
 // ========================================================
 router.get("/", async (req, res) => {

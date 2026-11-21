@@ -99,32 +99,33 @@ router.post(
             )
           }
 
-          // 2.3 Record payment into "transactions" collection (Idempotent: avoid duplicate inserts)
-          const transactionCollection = db.collection("transactions")
-          const existingTx = await transactionCollection.findOne({
+          // 2.3 Record payment into "payments" and "transactions" collections
+          const paymentData = {
+            vendorEmail,
+            vendorId: vendorId || null,
+            plan: "premium",
+            amount: amountPaid,
+            currency,
             stripeSessionId: session.id,
-          })
-
-          if (!existingTx) {
-            const newTransaction = {
-              vendorEmail,
-              vendorId: vendorId || null,
-              plan: "premium",
-              amount: amountPaid,
-              currency,
-              stripeSessionId: session.id,
-              stripePaymentIntentId: session.payment_intent || null,
-              status: "paid",
-              createdAt: new Date(),
-            }
-
-            await transactionCollection.insertOne(newTransaction)
-            console.log(`📝 Transaction record created for session [${session.id}].`)
-          } else {
-            console.log(
-              `ℹ️ Transaction [${session.id}] was already recorded previously.`
-            )
+            stripePaymentIntentId: session.payment_intent || null,
+            status: "paid",
+            createdAt: new Date(),
           }
+
+          // Save to payments
+          await db.collection("payments").updateOne(
+            { stripeSessionId: session.id },
+            { $setOnInsert: paymentData },
+            { upsert: true }
+          )
+
+          // Save to transactions
+          await db.collection("transactions").updateOne(
+            { stripeSessionId: session.id },
+            { $setOnInsert: paymentData },
+            { upsert: true }
+          )
+          console.log(`📝 Payment record created in payments & transactions for session [${session.id}].`)
         } catch (dbError) {
           console.error("❌ Database update error in webhook:", dbError)
         }

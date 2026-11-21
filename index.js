@@ -13,6 +13,7 @@ import customerRoutes from "./routes/customer.js"
 import menuRoutes from "./routes/menu.js"
 import adminRoutes from "./routes/admin.js"
 import webhookRoutes from "./routes/webhook.js"
+import paymentRoutes from "./routes/payment.js"
 
 const app = express()
 const port = process.env.PORT || 5000
@@ -61,6 +62,7 @@ app.get("/api/customer/check", verifyJWT, verifyCustomer, (req, res) => {
 app.use("/api/customer", customerRoutes)
 app.use("/api/menu", menuRoutes)
 app.use("/api/admin", adminRoutes)
+app.use("/api/payment", paymentRoutes)
 
 // 6. Connect MongoDB & Start Server
 connectDB()
