@@ -12,6 +12,7 @@ import {
 import customerRoutes from "./routes/customer.js"
 import menuRoutes from "./routes/menu.js"
 import adminRoutes from "./routes/admin.js"
+import webhookRoutes from "./routes/webhook.js"
 
 const app = express()
 const port = process.env.PORT || 5000
@@ -23,6 +24,11 @@ app.use(
     credentials: true,
   })
 )
+
+// 2. Stripe Webhook (MUST be before express.json() because Stripe needs the raw body buffer)
+app.use("/api/webhook", webhookRoutes)
+
+// 3. Body Parser for standard JSON routes
 app.use(express.json())
 
 // 2. Public Health Check Route

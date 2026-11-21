@@ -108,7 +108,7 @@ router.get("/my-items", verifyJWT, verifyVendor, async (req, res) => {
 // ========================================================
 // GET /api/menu/my-menu-count — Count active/pending items for logged-in vendor
 // ========================================================
-router.get("/my-menu-count", verifyJWT, verifyVendor, async (req, res) => {
+router.get(["/my-menu-count", "/menu-count"], verifyJWT, verifyVendor, async (req, res) => {
   try {
     const db = getDB()
     const vendorEmail = req.user.email
