@@ -106,6 +106,32 @@ router.get("/my-items", verifyJWT, verifyVendor, async (req, res) => {
 })
 
 // ========================================================
+// GET /api/menu/my-menu-count — Count active/pending items for logged-in vendor
+// ========================================================
+router.get("/my-menu-count", verifyJWT, verifyVendor, async (req, res) => {
+  try {
+    const db = getDB()
+    const vendorEmail = req.user.email
+
+    // Fast MongoDB query: count non-rejected menu items for this vendor
+    const count = await db.collection("menuItems").countDocuments({
+      vendorEmail,
+      status: { $ne: "rejected" },
+    })
+
+    return res.json({
+      success: true,
+      count,
+    })
+  } catch (error) {
+    console.error("Error counting vendor menu items:", error)
+    return res.status(500).json({
+      message: "Server error while counting menu items.",
+    })
+  }
+})
+
+// ========================================================
 // GET /api/menu — Public Browse Menu (Approved items only)
 // ========================================================
 router.get("/", async (req, res) => {
