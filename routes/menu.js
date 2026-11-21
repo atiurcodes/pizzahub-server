@@ -219,7 +219,26 @@ router.get("/:id", async (req, res) => {
       return res.status(404).json({ message: "Menu item not found." })
     }
 
-    return res.json({ success: true, item })
+    // Lookup vendor details & subscription status
+    let vendor = null
+    if (item.vendorEmail) {
+      const hasUserCol = await db.listCollections({ name: "user" }).hasNext()
+      const userCollection = hasUserCol ? db.collection("user") : db.collection("users")
+      const vendorUser = await userCollection.findOne({ email: item.vendorEmail })
+
+      if (vendorUser) {
+        vendor = {
+          name: vendorUser.name || "Local Pizza Shop",
+          businessName: vendorUser.businessName || vendorUser.name || "Local Pizza Shop",
+          email: vendorUser.email,
+          subscriptionPlan: vendorUser.subscriptionPlan || "free",
+          isPremium: vendorUser.subscriptionPlan === "premium",
+          image: vendorUser.image || null,
+        }
+      }
+    }
+
+    return res.json({ success: true, item: { ...item, vendor } })
   } catch (error) {
     console.error("Error fetching menu item:", error)
     return res.status(500).json({
