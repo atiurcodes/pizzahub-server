@@ -8,23 +8,113 @@ import { verifyCustomer } from "../middleware/verifyRole.js"
 const router = express.Router()
 
 // ========================================================
-// 1. GET /api/customer/menu — Public Browse Menu (Approved items only)
+// 1. GET /api/customer/menu — Public Browse Menu with Search, Filter & Sort
 // ========================================================
 router.get("/menu", async (req, res) => {
   try {
+    const { search, category, location, sortBy, sortOrder, sort } = req.query
     const db = getDB()
 
-    // Public customer menu displays strictly approved items
+    // 1. Base query: strictly approved items for public customers
+    const query = { status: "approved" }
+
+    // 2. Search by item name or description keywords
+    if (search && typeof search === "string" && search.trim() !== "") {
+      const searchRegex = new RegExp(search.trim(), "i")
+      query.$or = [
+        { itemName: { $regex: searchRegex } },
+        { description: { $regex: searchRegex } },
+      ]
+    }
+
+    // 3. Filter by Category
+    if (
+      category &&
+      typeof category === "string" &&
+      category.trim() !== "" &&
+      category.trim().toLowerCase() !== "all"
+    ) {
+      query.category = category.trim()
+    }
+
+    // 4. Filter by Location (case-insensitive substring)
+    if (
+      location &&
+      typeof location === "string" &&
+      location.trim() !== "" &&
+      location.trim().toLowerCase() !== "all"
+    ) {
+      query.location = { $regex: new RegExp(location.trim(), "i") }
+    }
+
+    // 5. Sort Criteria (Challenge Requirement: Sort by price ascending and descending)
+    let sortCriteria = { createdAt: -1 } // default newest
+
+    const sortParam = (sort || "").toLowerCase()
+    const sortByParam = (sortBy || "").toLowerCase()
+    const sortOrderParam = (sortOrder || "").toLowerCase()
+
+    if (
+      sortParam === "price-asc" ||
+      sortParam === "price_asc" ||
+      (sortByParam === "price" && sortOrderParam === "asc")
+    ) {
+      sortCriteria = { price: 1, createdAt: -1 }
+    } else if (
+      sortParam === "price-desc" ||
+      sortParam === "price_desc" ||
+      (sortByParam === "price" && sortOrderParam === "desc")
+    ) {
+      sortCriteria = { price: -1, createdAt: -1 }
+    } else if (sortParam === "name-asc") {
+      sortCriteria = { itemName: 1 }
+    } else if (sortParam === "newest") {
+      sortCriteria = { createdAt: -1 }
+    }
+
     const items = await db
       .collection("menuItems")
-      .find({ status: "approved" })
-      .sort({ createdAt: -1 })
+      .find(query)
+      .sort(sortCriteria)
       .toArray()
+
+    // 6. Enrich items with vendor information (including isPremium status)
+    const hasUserCol = await db.listCollections({ name: "user" }).hasNext()
+    const userCollection = hasUserCol ? db.collection("user") : db.collection("users")
+
+    const vendorEmails = [...new Set(items.map((i) => i.vendorEmail).filter(Boolean))]
+    const vendors = await userCollection
+      .find({ email: { $in: vendorEmails } })
+      .project({ name: 1, businessName: 1, email: 1, subscriptionPlan: 1, image: 1 })
+      .toArray()
+
+    const vendorMap = new Map()
+    vendors.forEach((v) => {
+      vendorMap.set(v.email, {
+        name: v.name,
+        businessName: v.businessName || v.name,
+        email: v.email,
+        subscriptionPlan: v.subscriptionPlan || "free",
+        isPremium: v.subscriptionPlan === "premium",
+        image: v.image || null,
+      })
+    })
+
+    const enrichedItems = items.map((item) => ({
+      ...item,
+      vendor: vendorMap.get(item.vendorEmail) || null,
+    }))
+
+    // 7. Get distinct approved locations for the frontend filter dropdown
+    const availableLocations = await db
+      .collection("menuItems")
+      .distinct("location", { status: "approved" })
 
     return res.json({
       success: true,
-      count: items.length,
-      items,
+      count: enrichedItems.length,
+      items: enrichedItems,
+      locations: availableLocations.filter(Boolean),
     })
   } catch (error) {
     console.error("Error fetching customer menu items:", error)

@@ -173,23 +173,106 @@ router.get("/subscription-status", verifyJWT, verifyVendor, async (req, res) => 
 })
 
 // ========================================================
-// GET /api/menu — Public Browse Menu (Approved items only)
+// GET /api/menu — Public Browse Menu with Search, Filter & Sort
 // ========================================================
 router.get("/", async (req, res) => {
   try {
+    const { search, category, location, sortBy, sortOrder, sort } = req.query
     const db = getDB()
 
-    // Fetch strictly approved items, sorted newest first
+    const query = { status: "approved" }
+
+    if (search && typeof search === "string" && search.trim() !== "") {
+      const searchRegex = new RegExp(search.trim(), "i")
+      query.$or = [
+        { itemName: { $regex: searchRegex } },
+        { description: { $regex: searchRegex } },
+      ]
+    }
+
+    if (
+      category &&
+      typeof category === "string" &&
+      category.trim() !== "" &&
+      category.trim().toLowerCase() !== "all"
+    ) {
+      query.category = category.trim()
+    }
+
+    if (
+      location &&
+      typeof location === "string" &&
+      location.trim() !== "" &&
+      location.trim().toLowerCase() !== "all"
+    ) {
+      query.location = { $regex: new RegExp(location.trim(), "i") }
+    }
+
+    let sortCriteria = { createdAt: -1 }
+
+    const sortParam = (sort || "").toLowerCase()
+    const sortByParam = (sortBy || "").toLowerCase()
+    const sortOrderParam = (sortOrder || "").toLowerCase()
+
+    if (
+      sortParam === "price-asc" ||
+      sortParam === "price_asc" ||
+      (sortByParam === "price" && sortOrderParam === "asc")
+    ) {
+      sortCriteria = { price: 1, createdAt: -1 }
+    } else if (
+      sortParam === "price-desc" ||
+      sortParam === "price_desc" ||
+      (sortByParam === "price" && sortOrderParam === "desc")
+    ) {
+      sortCriteria = { price: -1, createdAt: -1 }
+    } else if (sortParam === "name-asc") {
+      sortCriteria = { itemName: 1 }
+    } else if (sortParam === "newest") {
+      sortCriteria = { createdAt: -1 }
+    }
+
     const items = await db
       .collection("menuItems")
-      .find({ status: "approved" })
-      .sort({ createdAt: -1 })
+      .find(query)
+      .sort(sortCriteria)
       .toArray()
+
+    const hasUserCol = await db.listCollections({ name: "user" }).hasNext()
+    const userCollection = hasUserCol ? db.collection("user") : db.collection("users")
+
+    const vendorEmails = [...new Set(items.map((i) => i.vendorEmail).filter(Boolean))]
+    const vendors = await userCollection
+      .find({ email: { $in: vendorEmails } })
+      .project({ name: 1, businessName: 1, email: 1, subscriptionPlan: 1, image: 1 })
+      .toArray()
+
+    const vendorMap = new Map()
+    vendors.forEach((v) => {
+      vendorMap.set(v.email, {
+        name: v.name,
+        businessName: v.businessName || v.name,
+        email: v.email,
+        subscriptionPlan: v.subscriptionPlan || "free",
+        isPremium: v.subscriptionPlan === "premium",
+        image: v.image || null,
+      })
+    })
+
+    const enrichedItems = items.map((item) => ({
+      ...item,
+      vendor: vendorMap.get(item.vendorEmail) || null,
+    }))
+
+    const availableLocations = await db
+      .collection("menuItems")
+      .distinct("location", { status: "approved" })
 
     return res.json({
       success: true,
-      count: items.length,
-      items,
+      count: enrichedItems.length,
+      items: enrichedItems,
+      locations: availableLocations.filter(Boolean),
     })
   } catch (error) {
     console.error("Error fetching public menu items:", error)
