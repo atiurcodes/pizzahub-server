@@ -295,4 +295,102 @@ router.patch("/users/:id/block", async (req, res) => {
   }
 })
 
+// ========================================================
+// 6. GET /api/admin/transactions — Fetch all transactions (Strictly Read-Only)
+// ========================================================
+router.get("/transactions", async (req, res) => {
+  try {
+    const { search, status } = req.query
+    const db = getDB()
+
+    // 1. Fetch transactions (or merge with payments collection if needed)
+    let transactions = await db
+      .collection("transactions")
+      .find({})
+      .sort({ createdAt: -1 })
+      .toArray()
+
+    // Fallback: If transactions collection is empty, check payments collection
+    if (!transactions || transactions.length === 0) {
+      transactions = await db
+        .collection("payments")
+        .find({})
+        .sort({ createdAt: -1 })
+        .toArray()
+    }
+
+    // 2. Fetch all vendors to enrich vendor info
+    const hasUserCol = await db.listCollections({ name: "user" }).hasNext()
+    const userCollection = hasUserCol ? db.collection("user") : db.collection("users")
+
+    const vendorEmails = [...new Set(transactions.map((t) => t.vendorEmail).filter(Boolean))]
+    const vendors = await userCollection
+      .find({ email: { $in: vendorEmails } })
+      .project({ name: 1, businessName: 1, email: 1, image: 1 })
+      .toArray()
+
+    const vendorMap = new Map()
+    vendors.forEach((v) => {
+      vendorMap.set(v.email, {
+        name: v.name,
+        businessName: v.businessName || v.name,
+        email: v.email,
+        image: v.image || null,
+      })
+    })
+
+    // 3. Enrich transactions
+    let enriched = transactions.map((t) => {
+      const vendor = vendorMap.get(t.vendorEmail)
+      return {
+        ...t,
+        vendorName: vendor?.name || "Vendor",
+        businessName: vendor?.businessName || vendor?.name || "Restaurant",
+        vendorImage: vendor?.image || null,
+      }
+    })
+
+    // 4. Apply optional search filter (matches vendorEmail, businessName, or stripeSessionId)
+    if (search && search.trim()) {
+      const q = search.trim().toLowerCase()
+      enriched = enriched.filter(
+        (t) =>
+          (t.vendorEmail && t.vendorEmail.toLowerCase().includes(q)) ||
+          (t.businessName && t.businessName.toLowerCase().includes(q)) ||
+          (t.vendorName && t.vendorName.toLowerCase().includes(q)) ||
+          (t.stripeSessionId && t.stripeSessionId.toLowerCase().includes(q))
+      )
+    }
+
+    // 5. Apply status filter
+    if (status && status !== "all") {
+      enriched = enriched.filter(
+        (t) => (t.status || "").toLowerCase() === status.toLowerCase()
+      )
+    }
+
+    // 6. Calculate total revenue
+    const totalRevenue = enriched
+      .filter(
+        (t) =>
+          (t.status || "").toLowerCase() === "paid" ||
+          (t.status || "").toLowerCase() === "complete" ||
+          (t.status || "").toLowerCase() === "succeeded"
+      )
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0)
+
+    return res.json({
+      success: true,
+      count: enriched.length,
+      totalRevenue: Number(totalRevenue.toFixed(2)),
+      transactions: enriched,
+    })
+  } catch (error) {
+    console.error("Error fetching admin transactions:", error)
+    return res.status(500).json({
+      message: "Server error while fetching transactions.",
+    })
+  }
+})
+
 export default router
