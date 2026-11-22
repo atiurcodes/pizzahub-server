@@ -12,8 +12,9 @@ import {
 import customerRoutes from "./routes/customer.js"
 import menuRoutes from "./routes/menu.js"
 import adminRoutes from "./routes/admin.js"
-import webhookRoutes from "./routes/webhook.js"
 import paymentRoutes from "./routes/payment.js"
+import vendorRoutes from "./routes/vendor.js"
+import webhookRoutes from "./routes/webhook.js"
 
 const app = express()
 const port = process.env.PORT || 5000
@@ -61,6 +62,7 @@ app.get("/api/customer/check", verifyJWT, verifyCustomer, (req, res) => {
 // 5. Business Routes
 app.use("/api/customer", customerRoutes)
 app.use("/api/menu", menuRoutes)
+app.use("/api/vendor", vendorRoutes)
 app.use("/api/admin", adminRoutes)
 app.use("/api/payment", paymentRoutes)
 
