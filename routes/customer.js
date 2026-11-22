@@ -334,4 +334,53 @@ router.patch("/orders/:id/cancel", verifyJWT, verifyCustomer, async (req, res) =
   }
 })
 
+// ========================================================
+// 5. GET /api/customer/stats — Customer Dashboard Analytics (Live)
+// ========================================================
+router.get("/stats", verifyJWT, verifyCustomer, async (req, res) => {
+  try {
+    const db = getDB()
+    const customerFilter = {
+      $or: [
+        { customerEmail: req.user.email },
+        { customerId: req.user.id },
+      ],
+    }
+
+    const totalOrders = await db.collection("orders").countDocuments(customerFilter)
+    const pendingOrders = await db.collection("orders").countDocuments({
+      ...customerFilter,
+      status: "pending",
+    })
+    const acceptedOrders = await db.collection("orders").countDocuments({
+      ...customerFilter,
+      status: "accepted",
+    })
+    const rejectedOrders = await db.collection("orders").countDocuments({
+      ...customerFilter,
+      status: "rejected",
+    })
+    const cancelledOrders = await db.collection("orders").countDocuments({
+      ...customerFilter,
+      status: "cancelled",
+    })
+
+    return res.json({
+      success: true,
+      stats: {
+        totalOrders,
+        pendingOrders,
+        acceptedOrders,
+        rejectedOrders,
+        cancelledOrders,
+      },
+    })
+  } catch (error) {
+    console.error("Error fetching customer stats:", error)
+    return res.status(500).json({
+      message: "Server error while fetching customer stats.",
+    })
+  }
+})
+
 export default router
