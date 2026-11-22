@@ -125,6 +125,71 @@ router.get("/menu", async (req, res) => {
 })
 
 // ========================================================
+// 1.1 GET /api/customer/menu/featured — Featured Menu Items (Prioritizing Premium Vendors)
+// ========================================================
+router.get("/menu/featured", async (req, res) => {
+  try {
+    const db = getDB()
+
+    // 1. Strictly approved items
+    const items = await db
+      .collection("menuItems")
+      .find({ status: "approved" })
+      .sort({ createdAt: -1 })
+      .toArray()
+
+    // 2. Enrich with vendor profile & isPremium status
+    const hasUserCol = await db.listCollections({ name: "user" }).hasNext()
+    const userCollection = hasUserCol ? db.collection("user") : db.collection("users")
+
+    const vendorEmails = [...new Set(items.map((i) => i.vendorEmail).filter(Boolean))]
+    const vendors = await userCollection
+      .find({ email: { $in: vendorEmails } })
+      .project({ name: 1, businessName: 1, email: 1, subscriptionPlan: 1, image: 1 })
+      .toArray()
+
+    const vendorMap = new Map()
+    vendors.forEach((v) => {
+      vendorMap.set(v.email, {
+        name: v.name,
+        businessName: v.businessName || v.name,
+        email: v.email,
+        subscriptionPlan: v.subscriptionPlan || "free",
+        isPremium: v.subscriptionPlan === "premium",
+        image: v.image || null,
+      })
+    })
+
+    const enrichedItems = items.map((item) => ({
+      ...item,
+      vendor: vendorMap.get(item.vendorEmail) || null,
+    }))
+
+    // 3. Priority Sort: Items from Premium vendors come FIRST, then newest items
+    enrichedItems.sort((a, b) => {
+      const aPrem = a.vendor?.isPremium ? 1 : 0
+      const bPrem = b.vendor?.isPremium ? 1 : 0
+      if (bPrem !== aPrem) return bPrem - aPrem
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    })
+
+    const limit = Math.max(6, parseInt(req.query.limit, 10) || 6)
+    const featured = enrichedItems.slice(0, limit)
+
+    return res.json({
+      success: true,
+      count: featured.length,
+      items: featured,
+    })
+  } catch (error) {
+    console.error("Error fetching featured customer menu items:", error)
+    return res.status(500).json({
+      message: "Server error while fetching featured items.",
+    })
+  }
+})
+
+// ========================================================
 // 2. POST /api/customer/orders — Submit Customer Pizza Order
 // ========================================================
 router.post("/orders", verifyJWT, verifyCustomer, async (req, res) => {
